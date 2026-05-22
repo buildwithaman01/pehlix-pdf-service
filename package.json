@@ -8,8 +8,14 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "@aws-sdk/client-s3": "^3.1052.0",
+    "@sparticuz/chromium": "^148.0.0",
+    "axios": "^1.16.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^9.6.2",
+    "puppeteer-core": "^25.0.4",
+    "qrcode": "^1.5.4"
   }
 }
