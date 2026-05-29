@@ -29,6 +29,10 @@ const parameterResultSchema = new mongoose.Schema({
   overrideReason: {
     type: String,
     trim: true
+  },
+  appliedRangeLabel: {
+    type: String,
+    trim: true
   }
 }, { _id: false });
 

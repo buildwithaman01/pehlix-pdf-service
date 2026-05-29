@@ -59,6 +59,15 @@ const testMasterSchema = new mongoose.Schema({
     default: 0
   },
   parameters: [testParameterSchema],
+  labId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lab',
+    index: true
+  },
+  isCustom: {
+    type: Boolean,
+    default: false
+  },
   isActive: {
     type: Boolean,
     default: true

@@ -83,6 +83,18 @@ export async function generateReportPdf(visitId, labId, reportId) {
       throw new Error(`No results found for visit: ${visitId}`);
     }
 
+    // Apply custom parameter overrides from LabTest in-memory
+    for (const res of results) {
+      if (res.testId) {
+        const labTest = await LabTest.findOne({ labId, testId: res.testId._id });
+        if (labTest && labTest.customParameters && labTest.customParameters.length > 0) {
+          const plainTestId = res.testId.toObject ? res.testId.toObject() : res.testId;
+          plainTestId.parameters = labTest.customParameters.map(cp => cp.toObject ? cp.toObject() : cp);
+          res.testId = plainTestId;
+        }
+      }
+    }
+
     // Determine the pathologist who approved the results
     const pathologist = results.find(r => r.approvedBy)?.approvedBy;
 

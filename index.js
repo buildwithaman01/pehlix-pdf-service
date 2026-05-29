@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import compression from 'compression';
 import { generateReportPdf } from './src/generator.js';
 
 dotenv.config();
@@ -8,6 +9,10 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Module-level concurrency lock
+let isProcessing = false;
+
+app.use(compression());
 app.use(cors());
 app.use(express.json());
 
@@ -25,12 +30,27 @@ app.get('/health', (req, res) => {
   });
 });
 
+// UptimeRobot keep-alive ping route (no auth, no db)
+app.get('/ping', (req, res) => {
+  res.json({ pong: true });
+});
+
 /**
  * POST /generate
  * Endpoint hit by QStash to trigger PDF report generation.
- * Protected by shared secret token.
+ * Protected by shared secret token. Includes concurrency lock check.
  */
 app.post('/generate', async (req, res) => {
+  if (isProcessing) {
+    console.warn('[Generate] Rejecting request: Node is busy processing another PDF.');
+    return res.status(429).json({ 
+      error: 'Node busy', 
+      message: 'This PDF node is currently processing another request. QStash will retry.' 
+    });
+  }
+
+  isProcessing = true;
+
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -62,6 +82,8 @@ app.post('/generate', async (req, res) => {
       error: 'PDF generation failed internally', 
       details: error.message 
     });
+  } finally {
+    isProcessing = false;
   }
 });
 

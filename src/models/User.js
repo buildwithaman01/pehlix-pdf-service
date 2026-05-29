@@ -43,6 +43,18 @@ const userSchema = new mongoose.Schema({
   signature: {
     type: String,
     trim: true
+  },
+  qualifications: {
+    type: String,
+    trim: true
+  },
+  registrationNumber: {
+    type: String,
+    trim: true
+  },
+  signatureImageKey: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true

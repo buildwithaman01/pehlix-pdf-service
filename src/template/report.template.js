@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import axios from 'axios';
+import R2Service from '../r2.js';
 
 // Helper to convert remote image URLs to base64 data URIs
 async function imageToBase64(url) {
@@ -61,6 +62,56 @@ function getTrendDetails(history, normalLow, normalHigh) {
     // so we just label it as Stable unless we can check reference ranges.
     return { status: 'stable', color: '#64748b', text: 'Stable' };
   }
+}
+
+// Phase 3.4 — Selects the most demographically specific reference range for a parameter.
+function selectReferenceRange(paramTemplate, patientAge, patientAgeUnit, patientGender) {
+  let ageInYears = parseFloat(patientAge) || 0;
+  if (patientAgeUnit === 'months') ageInYears = ageInYears / 12;
+  if (patientAgeUnit === 'days') ageInYears = ageInYears / 365.25;
+
+  const defaultRange = {
+    normalLow: paramTemplate.normalLow,
+    normalHigh: paramTemplate.normalHigh,
+    criticalLow: paramTemplate.criticalLow,
+    criticalHigh: paramTemplate.criticalHigh,
+    label: 'Standard'
+  };
+
+  if (!paramTemplate.referenceRanges || paramTemplate.referenceRanges.length === 0) {
+    return defaultRange;
+  }
+
+  const gender = patientGender || 'other';
+
+  const agematched = paramTemplate.referenceRanges.filter(r => {
+    let rangeMinYears = parseFloat(r.ageMin) || 0;
+    let rangeMaxYears = parseFloat(r.ageMax) ?? 150;
+    const rUnit = r.ageUnit || 'years';
+    if (rUnit === 'months') { rangeMinYears /= 12; rangeMaxYears /= 12; }
+    if (rUnit === 'days') { rangeMinYears /= 365.25; rangeMaxYears /= 365.25; }
+    return ageInYears >= rangeMinYears && ageInYears <= rangeMaxYears;
+  });
+
+  if (agematched.length === 0) return defaultRange;
+
+  const genderSpecific = agematched.filter(r =>
+    r.genderMatch && r.genderMatch.length > 0 &&
+    !r.genderMatch.includes('any') &&
+    r.genderMatch.includes(gender)
+  );
+
+  const best = genderSpecific.length > 0
+    ? genderSpecific[0]
+    : (agematched.find(r => !r.genderMatch || r.genderMatch.includes('any') || r.genderMatch.length === 0) || agematched[0]);
+
+  return {
+    normalLow: best.normalLow ?? defaultRange.normalLow,
+    normalHigh: best.normalHigh ?? defaultRange.normalHigh,
+    criticalLow: best.criticalLow ?? defaultRange.criticalLow,
+    criticalHigh: best.criticalHigh ?? defaultRange.criticalHigh,
+    label: best.label || 'Standard'
+  };
 }
 
 // Generate inline SVG for the historical values trend
@@ -153,7 +204,24 @@ export async function generateReportHtml(data) {
 
   // Convert URLs to Base64 to make Puppeteer independent of external network requests
   const logoBase64 = lab.logo ? await imageToBase64(lab.logo) : '';
-  const signatureBase64 = pathologist && pathologist.signature ? await imageToBase64(pathologist.signature) : '';
+  
+  let signatureBase64 = '';
+  if (pathologist) {
+    if (pathologist.signatureImageKey) {
+      try {
+        console.log(`[Template] Fetching signature from R2 key: ${pathologist.signatureImageKey}`);
+        const signatureBuffer = await R2Service.getObjectBuffer(pathologist.signatureImageKey);
+        signatureBase64 = `data:image/png;base64,${signatureBuffer.toString('base64')}`;
+      } catch (err) {
+        console.error('[Template] Failed to fetch signature from R2:', err.message);
+        if (pathologist.signature) {
+          signatureBase64 = await imageToBase64(pathologist.signature);
+        }
+      }
+    } else if (pathologist.signature) {
+      signatureBase64 = await imageToBase64(pathologist.signature);
+    }
+  }
 
   // Generate QR Code pointing to verification URL
   const verificationUrl = `https://verify.pehlix.in/r/${report.qrVerificationId}`;
@@ -574,6 +642,20 @@ export async function generateReportHtml(data) {
 <body>
   <div class="report-wrapper">
     
+    <!-- Phase 3.6 — Amended Report Banner -->
+    ${report.isAmended ? `
+      <div style="background-color: #fffbeb; border: 1.5px solid #f59e0b; border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; color: #b45309; font-size: 9.5pt; page-break-inside: avoid; display: block; font-family: 'Outfit', sans-serif;">
+        <div style="font-weight: 700; font-size: 11pt; margin-bottom: 4px; text-transform: uppercase;">
+          ⚠️ Amended Report (Version ${report.version})
+        </div>
+        <div style="line-height: 1.4;">
+          This report has been amended to correct previous diagnostic values.
+          <br/><strong>Amendment Reason:</strong> ${report.amendmentReason || 'Clinical review correction'}.
+          <br/><strong>Amended On:</strong> ${formatDate(report.amendedAt || new Date())}
+        </div>
+      </div>
+    ` : ''}
+
     <!-- Report Header -->
     <table class="header-table">
       <tr>
@@ -649,7 +731,7 @@ export async function generateReportHtml(data) {
         
         ${resultsByDept[dept].map(res => {
           const testName = res.testId?.name || 'Diagnostic Test';
-          const testCode = res.testId?.code || '';
+          const testCode = res.testId?.code ? res.testId.code.split('-')[0] : '';
           
           return `
             <div class="test-container">
@@ -690,15 +772,21 @@ export async function generateReportHtml(data) {
 
                     // Reference range text
                     let refText = 'N/A';
+                    let appliedLabel = '';
                     // Find parameter template range details
                     const paramTemplate = res.testId?.parameters?.find(p => p.name === param.parameterName);
                     if (paramTemplate) {
-                      if (paramTemplate.normalLow !== undefined && paramTemplate.normalHigh !== undefined) {
-                        refText = `${paramTemplate.normalLow} - ${paramTemplate.normalHigh}`;
-                      } else if (paramTemplate.normalLow !== undefined) {
-                        refText = `> ${paramTemplate.normalLow}`;
-                      } else if (paramTemplate.normalHigh !== undefined) {
-                        refText = `< ${paramTemplate.normalHigh}`;
+                      // Phase 3.4 — Select demographics-aware range on-the-fly
+                      const range = selectReferenceRange(paramTemplate, patient.age, patient.ageUnit, patient.gender);
+                      if (range.normalLow !== undefined && range.normalHigh !== undefined) {
+                        refText = `${range.normalLow} - ${range.normalHigh}`;
+                      } else if (range.normalLow !== undefined) {
+                        refText = `> ${range.normalLow}`;
+                      } else if (range.normalHigh !== undefined) {
+                        refText = `< ${range.normalHigh}`;
+                      }
+                      if (range.label && range.label !== 'Standard') {
+                        appliedLabel = `<br/><span style="font-size: 7.5pt; color: #64748b; font-weight: normal;">(${range.label})</span>`;
                       }
                     }
 
@@ -755,7 +843,7 @@ export async function generateReportHtml(data) {
         <td class="approver-details">
           ${pathologist ? `
             <div class="approver-name">Approved By: ${pathologist.name}</div>
-            <div>${pathologist.qualification || 'Consultant Pathologist'}</div>
+            <div>${pathologist.qualifications || pathologist.qualification || 'Consultant Pathologist'}</div>
             ${pathologist.registrationNumber ? `<div>Reg No: ${pathologist.registrationNumber}</div>` : ''}
           ` : `
             <div class="approver-name">Approved By: Chief Pathologist</div>

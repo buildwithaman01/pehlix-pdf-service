@@ -36,6 +36,33 @@ const reportSchema = new mongoose.Schema({
   },
   generatedAt: {
     type: Date
+  },
+  version: {
+    type: Number,
+    default: 1
+  },
+  isAmended: {
+    type: Boolean,
+    default: false
+  },
+  amendmentReason: {
+    type: String,
+    trim: true
+  },
+  amendedAt: {
+    type: Date
+  },
+  amendedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  originalReportId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Report'
+  },
+  previousPdfUrl: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true

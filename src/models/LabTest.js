@@ -1,5 +1,33 @@
 import mongoose from 'mongoose';
 
+const customParameterSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  unit: {
+    type: String,
+    trim: true
+  },
+  normalLow: {
+    type: Number
+  },
+  normalHigh: {
+    type: Number
+  },
+  criticalLow: {
+    type: Number
+  },
+  criticalHigh: {
+    type: Number
+  },
+  isDerived: {
+    type: Boolean,
+    default: false
+  }
+}, { _id: false });
+
 const labTestSchema = new mongoose.Schema({
   labId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -30,6 +58,7 @@ const labTestSchema = new mongoose.Schema({
   customTurnaroundTime: {
     type: Number // in hours
   },
+  customParameters: [customParameterSchema],
   isActive: {
     type: Boolean,
     default: true

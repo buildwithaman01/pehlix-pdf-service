@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -28,6 +28,33 @@ export const R2Service = {
       return key;
     } catch (error) {
       console.error('R2 uploadBuffer failed:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Downloads an object from the R2 bucket as a Buffer.
+   */
+  async getObjectBuffer(key) {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME,
+        Key: key,
+      });
+      const response = await s3Client.send(command);
+      
+      // Convert stream to Buffer
+      const streamToBuffer = (stream) =>
+        new Promise((resolve, reject) => {
+          const chunks = [];
+          stream.on('data', (chunk) => chunks.push(chunk));
+          stream.on('error', reject);
+          stream.on('end', () => resolve(Buffer.concat(chunks)));
+        });
+
+      return await streamToBuffer(response.Body);
+    } catch (error) {
+      console.error('R2 getObjectBuffer failed:', error);
       throw error;
     }
   }
