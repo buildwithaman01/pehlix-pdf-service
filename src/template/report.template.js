@@ -3,7 +3,7 @@ import axios from 'axios';
 import R2Service from '../r2.js';
 
 // Helper to convert remote image URLs to base64 data URIs
-async function imageToBase64(url) {
+export async function imageToBase64(url) {
   if (!url) return '';
   if (url.startsWith('data:')) return url;
   try {
@@ -205,6 +205,8 @@ export async function generateReportHtml(data) {
 
   // Convert URLs to Base64 to make Puppeteer independent of external network requests
   const logoBase64 = lab.logo && !noLetterhead ? await imageToBase64(lab.logo) : '';
+  const reportHeaderBase64 = lab.reportHeader && !noLetterhead && lab.reportSettings?.backgroundMode === 'header_footer' ? await imageToBase64(lab.reportHeader) : '';
+  const reportFooterBase64 = lab.reportFooter && !noLetterhead && lab.reportSettings?.backgroundMode === 'header_footer' ? await imageToBase64(lab.reportFooter) : '';
   
   let signatureBase64 = '';
   if (pathologist) {
@@ -234,7 +236,7 @@ export async function generateReportHtml(data) {
   // Background images logic
   let bodyStyle = 'background-color: #ffffff;';
   if (!noLetterhead && lab.reportSettings) {
-    if (lab.reportSettings.backgroundMode === 'full' && lab.reportSettings.fullBackgroundImage) {
+    if (lab.reportSettings.backgroundMode === 'full_page' && lab.reportSettings.fullBackgroundImage) {
       const fullBgBase64 = await imageToBase64(lab.reportSettings.fullBackgroundImage);
       bodyStyle += `background-image: url('${fullBgBase64}'); background-size: cover; background-position: center;`;
     }
@@ -666,29 +668,36 @@ export async function generateReportHtml(data) {
       </div>
     ` : ''}
 
-    ${noLetterhead ? '' : `
-    <!-- Report Header -->
-    <table class="header-table">
-      <tr>
-        <td class="header-logo-container">
-          ${logoBase64 ? `<img src="${logoBase64}" class="header-logo" alt="Lab Logo" />` : ''}
-        </td>
-        <td class="header-lab-info">
-          <h1 class="lab-name">${lab.name}</h1>
-          <p class="lab-address">
-            ${lab.address ? `${lab.address.street || ''}, ${lab.address.city || ''}, ${lab.address.state || ''} - ${lab.address.pincode || ''}` : ''}
-          </p>
-          <p class="lab-contact">
-            Phone: ${lab.phone} ${lab.email ? `| Email: ${lab.email}` : ''}
-            ${isNabl && lab.nablNumber ? `<br/><span style="color: #1e3a8a; font-weight: 600;">NABL Reg: ${lab.nablNumber}</span>` : ''}
-          </p>
-        </td>
-        <td class="header-qr-container">
-          <img src="${qrCodeBase64}" class="qr-image" alt="Verification QR Code" />
-          <p class="qr-text">Scan to Verify Report</p>
-        </td>
-      </tr>
-    </table>
+    ${noLetterhead || lab.reportSettings?.backgroundMode === 'full_page' ? '' : `
+      ${reportHeaderBase64 ? `
+        <!-- Custom Image Header -->
+        <div style="width: 100%; margin-bottom: 10px;">
+          <img src="${reportHeaderBase64}" style="width: 100%; height: auto; display: block;" alt="Lab Header" />
+        </div>
+      ` : `
+        <!-- Default Textual Report Header -->
+        <table class="header-table">
+          <tr>
+            <td class="header-logo-container">
+              ${logoBase64 ? \`<img src="\${logoBase64}" class="header-logo" alt="Lab Logo" />\` : ''}
+            </td>
+            <td class="header-lab-info">
+              <h1 class="lab-name">${lab.name}</h1>
+              <p class="lab-address">
+                ${lab.address ? \`\${lab.address.street || ''}, \${lab.address.city || ''}, \${lab.address.state || ''} - \${lab.address.pincode || ''}\` : ''}
+              </p>
+              <p class="lab-contact">
+                Phone: ${lab.phone} ${lab.email ? \`| Email: \${lab.email}\` : ''}
+                ${isNabl && lab.nablNumber ? \`<br/><span style="color: #1e3a8a; font-weight: 600;">NABL Reg: \${lab.nablNumber}</span>\` : ''}
+              </p>
+            </td>
+            <td class="header-qr-container">
+              <img src="${qrCodeBase64}" class="qr-image" alt="Verification QR Code" />
+              <p class="qr-text">Scan to Verify Report</p>
+            </td>
+          </tr>
+        </table>
+      `}
     `}
 
     <!-- Patient and Visit Metadata -->

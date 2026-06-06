@@ -13,7 +13,7 @@ import Doctor from './models/Doctor.js';
 import LabTest from './models/LabTest.js';
 import TestMaster from './models/TestMaster.js';
 import R2Service from './r2.js';
-import generateReportHtml from './template/report.template.js';
+import generateReportHtml, { imageToBase64 } from './template/report.template.js';
 
 dotenv.config();
 
@@ -178,19 +178,33 @@ export async function generateReportPdf(visitId, labId, reportId, options = {}) 
       right: 15
     };
 
-    // Render to PDF
-    console.log('[Generator] Rendering page to PDF...');
+    let customFooterHtml = '';
+    if (!noLetterhead && lab.reportSettings?.backgroundMode === 'header_footer' && lab.reportFooter) {
+      const footerBase64 = await imageToBase64(lab.reportFooter);
+      if (footerBase64) {
+        customFooterHtml = `
+          <div style="width: 100%; padding-left: ${margins.left}mm; padding-right: ${margins.right}mm; display: flex; justify-content: center; align-items: flex-end;">
+            <img src="${footerBase64}" style="width: 100%; max-height: ${margins.bottom}mm; object-fit: contain; display: block;" />
+          </div>
+        `;
+      }
+    }
+
+    // 9. Generate PDF
+    console.log(`[Generate] Rendering PDF...`);
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
       displayHeaderFooter: true,
       headerTemplate: '<div style="height: 0px;"></div>',
-      footerTemplate: noLetterhead ? '<div style="height: 0px;"></div>' : `
+      footerTemplate: noLetterhead || lab.reportSettings?.backgroundMode === 'full_page' 
+        ? '<div style="height: 0px;"></div>' 
+        : (customFooterHtml || `
         <div style="font-family: 'Outfit', sans-serif; font-size: 8px; color: #94a3b8; width: 100%; display: flex; justify-content: space-between; padding-left: ${margins.left}mm; padding-right: ${margins.right}mm;">
           <div>Powered by <strong>Pehlix</strong></div>
           <div>Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>
         </div>
-      `,
+      `),
       margin: {
         top: `${margins.top}mm`,
         bottom: `${margins.bottom}mm`,
