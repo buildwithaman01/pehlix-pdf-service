@@ -87,6 +87,50 @@ app.post('/generate', async (req, res) => {
   }
 });
 
+/**
+ * POST /stream
+ * Endpoint hit by main app for real-time PDF generation without R2 upload.
+ * Used for "Print Without Letterhead" feature.
+ */
+app.post('/stream', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: 'Authorization header missing' });
+    }
+    
+    const token = authHeader.replace('Bearer ', '').trim();
+    if (token !== process.env.PDF_SERVICE_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const { visitId, labId, reportId, noLetterhead } = req.body;
+    if (!visitId || !labId || !reportId) {
+      return res.status(400).json({ error: 'Missing required body fields: visitId, labId, reportId' });
+    }
+
+    console.log(`[Stream] Accepted PDF stream job. Report ID: ${reportId}, noLetterhead: ${noLetterhead}`);
+    
+    const result = await generateReportPdf(visitId, labId, reportId, { 
+      streamMode: true, 
+      noLetterhead: !!noLetterhead 
+    });
+    
+    if (result.success && result.pdfBuffer) {
+      res.setHeader('Content-Type', 'application/pdf');
+      return res.send(result.pdfBuffer);
+    } else {
+      return res.status(500).json({ error: 'Failed to generate PDF buffer' });
+    }
+  } catch (error) {
+    console.error('[Stream] PDF Stream route failed:', error);
+    return res.status(500).json({ 
+      error: 'PDF stream failed internally', 
+      details: error.message 
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`PDF Service running on port ${PORT}`);
 });

@@ -7,6 +7,22 @@ const addressSchema = new mongoose.Schema({
   pincode: { type: String, trim: true }
 }, { _id: false });
 
+const reportSettingsSchema = new mongoose.Schema({
+  backgroundMode: { 
+    type: String, 
+    enum: ['none', 'header_footer', 'full_page'], 
+    default: 'header_footer' 
+  },
+  fullBackgroundImage: { type: String, trim: true },
+  margins: {
+    top: { type: Number, default: 35 },    // in mm
+    bottom: { type: Number, default: 35 }, // in mm
+    left: { type: Number, default: 15 },   // in mm
+    right: { type: Number, default: 15 }   // in mm
+  },
+  enablePrintWithoutLetterhead: { type: Boolean, default: false }
+}, { _id: false });
+
 const labSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -45,6 +61,10 @@ const labSchema = new mongoose.Schema({
   reportFooter: {
     type: String,
     trim: true
+  },
+  reportSettings: {
+    type: reportSettingsSchema,
+    default: () => ({})
   },
   nablNumber: {
     type: String,

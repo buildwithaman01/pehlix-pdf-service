@@ -199,11 +199,12 @@ export async function generateReportHtml(data) {
     doctor,
     results,
     pathologist,
-    historicalTrends = {} // Format: { [testId]: [{ date: Date, value: number, dateLabel: string }] }
+    historicalTrends = {}, // Format: { [testId]: [{ date: Date, value: number, dateLabel: string }] }
+    noLetterhead = false
   } = data;
 
   // Convert URLs to Base64 to make Puppeteer independent of external network requests
-  const logoBase64 = lab.logo ? await imageToBase64(lab.logo) : '';
+  const logoBase64 = lab.logo && !noLetterhead ? await imageToBase64(lab.logo) : '';
   
   let signatureBase64 = '';
   if (pathologist) {
@@ -229,6 +230,15 @@ export async function generateReportHtml(data) {
 
   // NABL Status check
   const isNabl = !!(visit.isNabl || visit.nablRequired || lab.nablNumber);
+
+  // Background images logic
+  let bodyStyle = 'background-color: #ffffff;';
+  if (!noLetterhead && lab.reportSettings) {
+    if (lab.reportSettings.backgroundMode === 'full' && lab.reportSettings.fullBackgroundImage) {
+      const fullBgBase64 = await imageToBase64(lab.reportSettings.fullBackgroundImage);
+      bodyStyle += `background-image: url('${fullBgBase64}'); background-size: cover; background-position: center;`;
+    }
+  }
 
   // Group results by department
   const resultsByDept = {};
@@ -259,10 +269,10 @@ export async function generateReportHtml(data) {
       margin: 0;
       padding: 0;
       color: #1e293b;
-      background-color: #ffffff;
       -webkit-print-color-adjust: exact;
       font-size: 11pt;
       line-height: 1.4;
+      ${bodyStyle}
     }
     
     .report-wrapper {
@@ -656,6 +666,7 @@ export async function generateReportHtml(data) {
       </div>
     ` : ''}
 
+    ${noLetterhead ? '' : `
     <!-- Report Header -->
     <table class="header-table">
       <tr>
@@ -678,6 +689,7 @@ export async function generateReportHtml(data) {
         </td>
       </tr>
     </table>
+    `}
 
     <!-- Patient and Visit Metadata -->
     <table class="patient-info-table">

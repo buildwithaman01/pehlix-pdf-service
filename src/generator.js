@@ -36,7 +36,8 @@ async function getBrowser() {
   return await puppeteer.launch(launchArgs);
 }
 
-export async function generateReportPdf(visitId, labId, reportId) {
+export async function generateReportPdf(visitId, labId, reportId, options = {}) {
+  const { noLetterhead = false, streamMode = false } = options;
   let browser = null;
   try {
     // 1. Connect to DB
@@ -157,7 +158,8 @@ export async function generateReportPdf(visitId, labId, reportId) {
       doctor: visit.referredBy,
       results,
       pathologist,
-      historicalTrends
+      historicalTrends,
+      noLetterhead
     });
 
     // 9. Generate PDF via Puppeteer
@@ -168,6 +170,14 @@ export async function generateReportPdf(visitId, labId, reportId) {
     // Set page content
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
 
+    // Extract margins, default to 15mm/20mm if not provided
+    const margins = lab.reportSettings?.margins || {
+      top: 15,
+      bottom: 20,
+      left: 15,
+      right: 15
+    };
+
     // Render to PDF
     console.log('[Generator] Rendering page to PDF...');
     const pdfBuffer = await page.pdf({
@@ -175,29 +185,74 @@ export async function generateReportPdf(visitId, labId, reportId) {
       printBackground: true,
       displayHeaderFooter: true,
       headerTemplate: '<div style="height: 0px;"></div>',
-      footerTemplate: `
-        <div style="font-family: 'Outfit', sans-serif; font-size: 8px; color: #94a3b8; width: 100%; display: flex; justify-content: space-between; padding-left: 20mm; padding-right: 20mm;">
+      footerTemplate: noLetterhead ? '<div style="height: 0px;"></div>' : `
+        <div style="font-family: 'Outfit', sans-serif; font-size: 8px; color: #94a3b8; width: 100%; display: flex; justify-content: space-between; padding-left: ${margins.left}mm; padding-right: ${margins.right}mm;">
           <div>Powered by <strong>Pehlix</strong></div>
           <div>Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>
         </div>
       `,
       margin: {
-        top: '15mm',
-        bottom: '20mm',
-        left: '15mm',
-        right: '15mm'
+        top: `${margins.top}mm`,
+        bottom: `${margins.bottom}mm`,
+        left: `${margins.left}mm`,
+        right: `${margins.right}mm`
       }
     });
 
+    // 10. Process Watermark (if amended/cancelled)
+    if (report.status === 'amended' || report.status === 'cancelled') {
+      const { PDFDocument, rgb } = await import('pdf-lib');
+      const pdfDoc = await PDFDocument.load(pdfBuffer);
+      const pages = pdfDoc.getPages();
+      
+      const watermarkText = report.status.toUpperCase();
+      
+      for (const page of pages) {
+        const { width, height } = page.getSize();
+        page.drawText(watermarkText, {
+          x: width / 2 - 150,
+          y: height / 2,
+          size: 80,
+          color: rgb(0.9, 0.9, 0.9), // Light gray
+          rotate: { type: 'degrees', angle: 45 },
+          opacity: 0.5
+        });
+      }
+      
+      const modifiedPdfBytes = await pdfDoc.save();
+      
+      if (streamMode) {
+        await browser.close();
+        return { success: true, pdfBuffer: Buffer.from(modifiedPdfBytes) };
+      }
+      
+      // Upload modified PDF to R2
+      const key = `labs/${labId}/reports/${report.reportCode || report._id}.pdf`;
+      await R2Service.uploadBuffer(Buffer.from(modifiedPdfBytes), key, 'application/pdf');
+      
+      // Send callback
+      const mainAppCallback = `${process.env.NEXT_PUBLIC_APP_URL}/api/internal/pdf/generated`;
+      await axios.post(mainAppCallback, { reportId: report._id.toString(), pdfUrl: key }, {
+        headers: { 'Authorization': `Bearer ${process.env.PDF_SERVICE_SECRET}` }
+      });
+      
+      await browser.close();
+      return { success: true, key };
+    }
+
+    if (streamMode) {
+      await browser.close();
+      return { success: true, pdfBuffer };
+    }
+
+    // 11. Upload to Cloudflare R2
+    const key = `labs/${labId}/reports/${report.reportCode || report._id}.pdf`;
+    console.log(`[Generator] Uploading to R2: ${key}`);
+    await R2Service.uploadBuffer(pdfBuffer, key, 'application/pdf');
+
     await browser.close();
-    browser = null;
-
-    // 10. Upload PDF buffer to Cloudflare R2
-    const key = `labs/${labId}/reports/${report.reportCode}.pdf`;
-    console.log(`[Generator] Uploading PDF buffer to R2: ${key}...`);
-    await R2Service.uploadBuffer(key, pdfBuffer);
-
-    // 11. Update MongoDB Report state
+    
+    // Update MongoDB Report state
     console.log('[Generator] Updating report record status to generated...');
     report.pdfUrl = key;
     report.status = 'generated';
