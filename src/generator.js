@@ -242,7 +242,7 @@ export async function generateReportPdf(visitId, labId, reportId, options = {}) 
       
       // Upload modified PDF to R2
       const key = `labs/${labId}/reports/${report.reportCode || report._id}.pdf`;
-      await R2Service.uploadBuffer(Buffer.from(modifiedPdfBytes), key, 'application/pdf');
+      await R2Service.uploadBuffer(key, Buffer.from(modifiedPdfBytes), 'application/pdf');
       
       // Send callback
       const mainAppCallback = `${process.env.NEXT_PUBLIC_APP_URL}/api/internal/pdf/generated`;
@@ -262,7 +262,7 @@ export async function generateReportPdf(visitId, labId, reportId, options = {}) 
     // 11. Upload to Cloudflare R2
     const key = `labs/${labId}/reports/${report.reportCode || report._id}.pdf`;
     console.log(`[Generator] Uploading to R2: ${key}`);
-    await R2Service.uploadBuffer(pdfBuffer, key, 'application/pdf');
+    await R2Service.uploadBuffer(key, pdfBuffer, 'application/pdf');
 
     await browser.close();
     

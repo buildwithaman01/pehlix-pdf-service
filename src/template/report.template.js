@@ -679,16 +679,16 @@ export async function generateReportHtml(data) {
         <table class="header-table">
           <tr>
             <td class="header-logo-container">
-              ${logoBase64 ? \`<img src="\${logoBase64}" class="header-logo" alt="Lab Logo" />\` : ''}
+              ${logoBase64 ? `<img src="${logoBase64}" class="header-logo" alt="Lab Logo" />` : ''}
             </td>
             <td class="header-lab-info">
               <h1 class="lab-name">${lab.name}</h1>
               <p class="lab-address">
-                ${lab.address ? \`\${lab.address.street || ''}, \${lab.address.city || ''}, \${lab.address.state || ''} - \${lab.address.pincode || ''}\` : ''}
+                ${lab.address ? `${lab.address.street || ''}, ${lab.address.city || ''}, ${lab.address.state || ''} - ${lab.address.pincode || ''}` : ''}
               </p>
               <p class="lab-contact">
-                Phone: ${lab.phone} ${lab.email ? \`| Email: \${lab.email}\` : ''}
-                ${isNabl && lab.nablNumber ? \`<br/><span style="color: #1e3a8a; font-weight: 600;">NABL Reg: \${lab.nablNumber}</span>\` : ''}
+                Phone: ${lab.phone} ${lab.email ? `| Email: ${lab.email}` : ''}
+                ${isNabl && lab.nablNumber ? `<br/><span style="color: #1e3a8a; font-weight: 600;">NABL Reg: ${lab.nablNumber}</span>` : ''}
               </p>
             </td>
             <td class="header-qr-container">
